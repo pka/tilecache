@@ -7,12 +7,14 @@ class MapServer(MetaLayer):
     config_properties = [
       {'name':'name', 'description': 'Name of Layer'}, 
       {'name':'mapfile', 'description': 'Location of MapServer map file.'},
+      {'name':'transparent', 'description': 'Transparency TRUE/FALSE'}, 
     ] + MetaLayer.config_properties 
     
-    def __init__ (self, name, mapfile = None, styles = "", **kwargs):
+    def __init__ (self, name, mapfile = None, styles = "", transparent='FALSE', **kwargs):
         MetaLayer.__init__(self, name, **kwargs) 
         self.mapfile = mapfile
         self.styles = styles
+        self.transparent = transparent
 
     def get_map(self, tile):
         # tile is unused here but might be used in a subclass
@@ -41,6 +43,7 @@ class MapServer(MetaLayer):
         req.setParameter("format", self.format())
         req.setParameter("layers", self.layers)
         req.setParameter("styles", self.styles)
+        req.setParameter("transparent", self.transparent)
         req.setParameter("request", "GetMap")
         return req
 
