@@ -20,13 +20,21 @@ class WMS (Request):
 
     def getMap (self, param):
         bbox  = map(float, param["bbox"].split(","))
-        layer = self.getLayer(param["layers"])
-        tile  = layer.getTile(bbox)
-        if not tile:
-            raise Exception(
-                "couldn't calculate tile index for layer %s from (%s)"
-                % (layer.name, bbox))
-        return tile
+        layers = param["layers"].split(",")
+
+        tiles =  []
+        for name in layers:
+            tile  = self.getLayer(name).getTile(bbox)
+            if not tile:
+                raise Exception(
+                    "couldn't calculate tile index for layer %s from (%s)"
+                    % (layer.name, bbox))
+            tiles.append(tile)
+
+        if len(tiles) > 1:
+            return tiles
+        else:
+            return tiles[0]
 
     def getCapabilities (self, host, param):
         if host[-1] not in "?&":

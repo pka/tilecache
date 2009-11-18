@@ -4,7 +4,7 @@
 
 class TileCacheException(Exception): pass
 
-import sys, cgi, time, os, traceback, ConfigParser
+import sys, cgi, time, os, traceback, email, ConfigParser
 import Cache, Caches
 import Layer, Layers
 
@@ -135,7 +135,7 @@ class Service (object):
         image = None
         if not force: image = self.cache.get(tile)
         if not image:
-            data = layer.render(tile)
+            data = layer.render(tile, force=force)
             if (data): image = self.cache.set(tile, data)
             else: raise Exception("Zero length data returned from layer.")
             if layer.debug:
@@ -158,7 +158,7 @@ class Service (object):
             topright   = layer.getClosestCell(z, bbox[2:4])
             for y in range(bottomleft[1], topright[1] + 1):
                 for x in range(bottomleft[0], topright[0] + 1):
-                    coverage = Tile(layer,x,y,z)
+                    coverage = Layer.Tile(layer,x,y,z)
                     self.cache.delete(coverage)
 
     def dispatchRequest (self, params, path_info="/", req_method="GET", host="http://example.com/"):
@@ -193,6 +193,9 @@ class Service (object):
         elif params.has_key("tile"):
             from TileCache.Services.VETMS import VETMS 
             tile = VETMS(self).parse(params, path_info, host)
+        elif params.has_key("format") and params['format'].lower() == "json":
+            from TileCache.Services.JSON import JSON 
+            return JSON(self).parse(params, path_info, host)
         else:
             from TileCache.Services.TMS import TMS
             tile = TMS(self).parse(params, path_info, host)
@@ -203,6 +206,38 @@ class Service (object):
                 return ('text/plain', 'OK')
             else:
                 return self.renderTile(tile, params.has_key('FORCE'))
+        elif isinstance(tile, list):
+            if req_method == 'DELETE':
+                [self.expireTile(t) for t in tile]
+                return ('text/plain', 'OK')
+            else:
+                try:
+                    import PIL.Image as Image
+                except ImportError:
+                    raise Exception("Combining multiple layers requires Python Imaging Library.")
+                try:
+                    import cStringIO as StringIO
+                except ImportError:
+                    import StringIO
+                
+                result = None
+                
+                for t in tile:
+                    (format, data) = self.renderTile(t, params.has_key('FORCE'))
+                    image = Image.open(StringIO.StringIO(data))
+                    if not result:
+                        result = image
+                    else:
+                        try:
+                            result.paste(image, None, image)
+                        except Exception, E:
+                            raise Exception("Could not combine images: Is it possible that some layers are not \n8-bit transparent images? \n(Error was: %s)" % E) 
+                
+                buffer = StringIO.StringIO()
+                result.save(buffer, result.format)
+                buffer.seek(0)
+
+                return (format, buffer.read())
         else:
             return (tile.format, tile.data)
 
@@ -220,9 +255,19 @@ def modPythonHandler (apacheReq, service):
                                 apacheReq.method,
                                 host )
         apacheReq.content_type = format
+        apacheReq.status = apache.HTTP_OK
+        if format.startswith("image/"):
+            if service.cache.sendfile:
+                apacheReq.headers_out['X-SendFile'] = image
+            if service.cache.expire:
+                apacheReq.headers_out['Expires'] = email.Utils.formatdate(time.time() + service.cache.expire, False, True)
+                
         apacheReq.send_http_header()
-        apacheReq.write(image)
-    except Layer.TileCacheException, E:
+        if format.startswith("image/") and service.cache.sendfile:
+            apacheReq.write("")
+        else: 
+            apacheReq.write(image)
+    except TileCacheException, E:
         apacheReq.content_type = "text/plain"
         apacheReq.status = apache.HTTP_NOT_FOUND
         apacheReq.send_http_header()
@@ -255,8 +300,18 @@ def wsgiHandler (environ, start_response, service):
         fields = parse_formvars(environ)
 
         format, image = service.dispatchRequest( fields, path_info, req_method, host )
-        start_response("200 OK", [('Content-Type',format)])
-        return [image]
+        headers = [('Content-Type',format)]
+        if format.startswith("image/"):
+            if service.cache.sendfile:
+                headers.append(('X-SendFile', image))
+            if service.cache.expire:
+                headers.append(('Expires', email.Utils.formatdate(time.time() + service.cache.expire, False, True)))
+
+        start_response("200 OK", headers)
+        if service.cache.sendfile and format.startswith("image/"):
+            return []
+        else:
+            return [image]
 
     except TileCacheException, E:
         start_response("404 Tile Not Found", [('Content-Type','text/plain')])
@@ -285,12 +340,18 @@ def cgiHandler (service):
         host += os.environ["SCRIPT_NAME"]
         req_method = os.environ["REQUEST_METHOD"]
         format, image = service.dispatchRequest( params, path_info, req_method, host )
-        print "Content-type: %s\n" % format
-
-        if sys.platform == "win32":
-            binaryPrint(image)
-        else:    
-            print image
+        print "Content-type: %s" % format
+        if format.startswith("image/"):
+            if service.cache.sendfile:
+                print "X-SendFile: %s" % image
+            if service.cache.expire:
+                print "Expires: %s" % email.Utils.formatdate(time.time() + service.cache.expire, False, True)
+        print "\n"
+        if (not service.cache.sendfile) or (not format.startswith("image/")):
+            if sys.platform == "win32":
+                binaryPrint(image)
+            else:    
+                print image
     except TileCacheException, E:
         print "Cache-Control: max-age=10, must-revalidate" # make the client reload        
         print "Content-type: text/plain\n"
@@ -302,23 +363,30 @@ def cgiHandler (service):
             str(E), 
             "".join(traceback.format_tb(sys.exc_traceback)))
 
-theService = None
-lastRead = None
+theService = {}
+lastRead = {}
 def handler (apacheReq):
     global theService, lastRead
     options = apacheReq.get_options()
     cfgs    = cfgfiles
-    cfgTime = None
+    fileChanged = False
     if options.has_key("TileCacheConfig"):
-        cfgs = cfgs + (options["TileCacheConfig"],)
+        configFile = options["TileCacheConfig"]
+        lastRead[configFile] = time.time()
+        
+        cfgs = cfgs + (configFile,)
         try:
-            cfgTime = os.stat(options['TileCacheConfig'])[8]
+            cfgTime = os.stat(configFile)[8]
+            fileChanged = lastRead[configFile] < cfgTime
         except:
             pass
-    if not theService or (lastRead and cfgTime and lastRead < cfgTime):
-        theService = Service.load(*cfgs)
-        lastRead = time.time()
-    return modPythonHandler(apacheReq, theService)
+    else:
+        configFile = 'default'
+        
+    if not theService.has_key(configFile) or fileChanged:
+        theService[configFile] = Service.load(*cfgs)
+        
+    return modPythonHandler(apacheReq, theService[configFile])
 
 def wsgiApp (environ, start_response):
     global theService
@@ -338,6 +406,20 @@ def binaryPrint(binary_data):
     except:
         pass
     sys.stdout.write(binary_data)    
+
+def paste_deploy_app(global_conf, full_stack=True, **app_conf):
+    if 'tilecache_config' in app_conf:
+        cfgfiles = (app_conf['tilecache_config'],)
+    else:
+        raise TileCacheException("No tilecache_config key found in configuration. Please specify location of tilecache config file in your ini file.")
+    theService = Service.load(*cfgfiles)
+    if 'exception' in theService.metadata:
+        raise theService.metadata['exception']
+    
+    def pdWsgiApp (environ,start_response):
+        return wsgiHandler(environ,start_response,theService)
+    
+    return pdWsgiApp
 
 if __name__ == '__main__':
     svc = Service.load(*cfgfiles)

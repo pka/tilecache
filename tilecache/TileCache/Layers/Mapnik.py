@@ -1,5 +1,7 @@
 # BSD Licensed, Copyright (c) 2006-2008 MetaCarta, Inc.
 
+import sys
+
 from TileCache.Layer import MetaLayer
 
 class Mapnik(MetaLayer):
@@ -22,8 +24,7 @@ class Mapnik(MetaLayer):
             self.fonts = []
             
     def renderTile(self, tile):
-        import mapnik, StringIO
-        import PIL.Image 
+        import mapnik
         
         if self.mapnik:
             m = self.mapnik
@@ -47,8 +48,8 @@ class Mapnik(MetaLayer):
                     l = m.layers[layer_num]
                     if l.name not in layers:
                         del m.layers[layer_num]
-                    if self.debug:
-                        print >>sys.stderr, "Removed layer %s loaded from %s, not in list: %s" % (l.name, self.mapfile, layers)
+                        if self.debug:
+                            print >>sys.stderr, "Removed layer %s loaded from %s, not in list: %s" % (l.name, self.mapfile, layers)
                         
             # this will insure that it gets cached in mod_python
             self.mapnik = m
@@ -65,14 +66,23 @@ class Mapnik(MetaLayer):
         im = mapnik.Image( *tile.size() )
         mapnik.render(m, im)
         if hasattr(im, 'tostring'):
-            data = im.tostring()
+            if self.paletted:
+                data = im.tostring('png256')
+            else:
+                data = im.tostring(self.extension)
+            tile.data = data
+            return tile.data
         elif hasattr(mapnik, 'rawdata'):
             data = mapnik.rawdata(im)
+            import PIL.Image, StringIO
+            im = PIL.Image.fromstring('RGBA', tile.size(), data)
+            buffer = StringIO.StringIO()
+            if self.paletted:
+                print >>sys.stderr, "Mapnik's 8-bit (png256) format not supported with PIL"
+            im.save(buffer, self.extension)
+            buffer.seek(0)
+            tile.data = buffer.read()
+            return tile.data 
         else:
             raise Exception("Something is wrong: your version of Mapnik can't create a string from an image.") 
-        im = PIL.Image.fromstring('RGBA', tile.size(), data)
-        buffer = StringIO.StringIO()
-        im.save(buffer, self.extension)
-        buffer.seek(0)
-        tile.data = buffer.read()
-        return tile.data 
+    

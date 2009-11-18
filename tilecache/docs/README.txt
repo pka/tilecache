@@ -1,20 +1,19 @@
-===========
- tilecache
-===========
+=================
+ Getting Started
+=================
 
 -------------------------
 Cache and serve map tiles
 -------------------------
 
 :Author: labs@metacarta.com
-:Date:   2007-05-19
 :Copyright: (c) 2006-2008 MetaCarta, Inc.
             Distributed under the BSD license.
-:Version: 2.03 
+:Version: 2.10 
 :Manual section: 8
 :Manual group: GIS Utilities
 
-DESCRIPTION
+Description
 ===========
 TileCache is a BSD licensed tile caching mechanism.  The goal is to make it
 easy to set up a WMS or TMS frontend to any backend data services you might be
@@ -30,7 +29,7 @@ setting up TileCache for use with OpenLayers, please feel free to stop by
 #openlayers, on irc.freenode.net, or to send email to
 tilecache@openlayers.org. 
 
-INSTALLING TILECACHE
+Installing TileCache
 ====================
 
 Generally, installing TileCache is as simple as downloading a source
@@ -43,18 +42,18 @@ tilecache_install_config.py. A full installation likely looks like::
   $ sudo easy_install TileCache
   ...
   Installed
-  /usr/lib/python2.5/site-packages/TileCache-2.03-py2.5.egg
+  /usr/lib/python2.5/site-packages/TileCache-2.10-py2.5.egg
   
   $ sudo tilecache_install_config.py
   Successfully copied file
-  /usr/lib/python2.5/site-packages/TileCache-2.03-py2.5.egg/TileCache/tilecache.cfg
+  /usr/lib/python2.5/site-packages/TileCache-2.10-py2.5.egg/TileCache/tilecache.cfg
   to /etc/tilecache.cfg.
   
 TileCache is also available as a Debian package from the TileCache homepage.
 This Debian package is designed to install on Debian etch releases or later.
 This Debian package should install on Ubuntu Feisty or Gutsy.  
 
-RUNNING UNDER CGI
+Running Under CGI
 =================
 
 * Extract the code to some web directory (e.g. in /var/www).
@@ -119,7 +118,7 @@ of tilecache.cgi to read:
 C:/Python should match the location Python is installed under on your 
 system. In Python 2.5, this location is C:/Python25 by default.  
 
-RUNNING UNDER MOD_PYTHON
+Running Under mod_python
 ========================
 
 * Extract the code to some web directory (e.g. /var/www).
@@ -153,8 +152,8 @@ RUNNING UNDER MOD_PYTHON
   tilecache.py
 * If you see a tile you have set up your configuration correctly. Congrats!
 
-RUNNING STANDALONE (UNDER WSGI)
-===============================
+Running Standalone under WSGI
+=============================
 
 TileCache as of version 1.4 comes with a standalone HTTP server which uses
 the WSGI handler. This implementation depends on *Python Paste*, which can be
@@ -182,7 +181,7 @@ be able to open:
 
 to see your first tile.
 
-RUNNING UNDER FASTCGI
+Running Under FastCGI
 =====================
 
 TileCache as of version 1.4 comes with a fastcgi implementation. In 
@@ -201,31 +200,52 @@ tilecache.fcgi.
 
 Configuring FastCGI is beyond the scope of this documentation.
 
-RUNNING UNDER IIS
+Running Under IIS
 =================
 
 Installing TileCache for use with IIS requires some additional configuration.
 
-* Install Python for Windows
-* Follow "Using Python Scripts with IIS" to setup Python CGI for IIS.
-  http://support.microsoft.com/kb/276494
-* Edit metabase.xml to get correct Security Permissions for IIS 6.0.
-  http://blogs.msdn.com/david.wang/archive/2005/04/20/IIS6-CGI-Web-Service-Extension.aspx
-* Edit tilecache.cgi to specify your configuration file explicitly:
+A nice document for setting up TileCache on IIS is available from Vish's
+weblog: http://viswaug.wordpress.com/2008/02/03/setting-up-tilecache-on-iis/ .
 
-  ::
+Running Standalone with PasteScript and CherryPy
+================================================
+
+One component of the CherryPy web framework is a pure Python, fast,
+HTTP/1.1-compliant, WSGI thread-pooled webserver.
+To deploy Tilecache using this option you have to:
+
+ * Install prerequisites:
+
+    easy_install PasteScript
+    easy_install CherryPy
+
+ * Create a deployment config file specifying the http server and the
+   application with options.  The format of the configuration file is
+   documented here: http://pythonpaste.org/deploy/#the-config-file
+
+Example configuration file follows. Copy the lines into tc.ini, tweak
+the tilecache_config variable, run paster serve tc.ini and enjoy at
+http://127.0.0.1:5000/tc
+
+::
+
+  [server:main]
+  #tested with Paste#http and PasteScript#wsgiutils, PasteScript#twisted
+  also possible after installing dependencies
+  use = egg:PasteScript#cherrypy
+  host = 127.0.0.1
+  port = 5000
+
+  [composite:main]
+  use = egg:Paste#urlmap
+  /tc = tilecache1
+
+  [app:tilecache1]
+  use = egg:TileCache
+  tilecache_config = tilecache.cfg
   
-     svc = Service.load("C:\\TileCache\\tilecache.cfg")
-
-When using Tilecache with TMS style requests, you will need to change your
-IIS configuration to allow PATH_INFO to be delivered to the CGI script.
-http://support.microsoft.com/kb/q184320/ provides information on this
-topic. If you do not do this, you will get an error message like:
-
- "The requested layer (tilecache.cgi) does not exist."
-
-
-CONFIGURATION
+Configuration
 =============
 TileCache is configured by a config file, defaulting to tilecache.cfg.
 There are several parameters to control TileCache layers that are applicable
@@ -304,7 +324,7 @@ to all layers:
     Setting this to "google" will cause tiles to switch vertical order (that
     is, following the Google style x/y pattern).
 
-USING TILECACHE WITH OPENLAYERS
+Using TileCache With OpenLayers
 ===============================
 
 To run OpenLayers with TileCache the URL passed to the OpenLayers.Layer.WMS
@@ -328,17 +348,27 @@ of the TileCache layer.
 If you are using TileCache for overlays, you should set the 'reproject' option
 on the layer to 'false'.
 
-USING TILECACHE WITH MAPSERVER
+Using TileCache With MapServer
 ==============================
+
 MapServer has a map level metadata option, labelcache_map_edge_buffer, which
 is set automatically by TileCache to the metaBuffer plus five when metaTiling
 is on, if it is not set in the mapfile.
 
 If you are using MetaTiling, be aware that MapServer generates interlaced
 PNG files, which PIL will not read. See 
-http://mapserver.gis.umn.edu/docs/faq/pil_mapscript on how to resolve this. 
+http://www.mapserver.org/faq.html#why-doesn-t-pil-python-imaging-library-open-my-pngs on how to resolve this. 
 
-SEEDING YOUR TILECACHE
+Using With Python-Mapscript
+===========================
+
+Several users have reported cases where large mapfiles combined with 
+python-mapscript has caused memory leaks, which eventually lead to 
+segfaults. If you are having problems with Apache/TileCache segfaults
+when using python-mapscript, then you should switch to using a WMS
+Layer instead of a MapServer Layer.
+
+Seeding your TileCache
 ======================
 
 The tilecache_seed.py utility will seed tiles in a cache automatically. You will
@@ -347,22 +377,30 @@ need to have TileCache set up in one of the previously described configurations.
 Usage
 -----
 
-     tilecache_seed.py <url> <layer> [<zoom start> <zoom stop> [<bbox>]]
+     tilecache_seed.py [options] <layer> [<zoom start> <zoom stop>]
 
+Options
+-------
+  --version             show program's version number and exit
+  -h, --help            show this help message and exit
+  -f, --force           force recreation of tiles even if they are already in
+                        cache
+  -b BBOX, --bbox=BBOX  restrict to specified bounding box
+  -p PADDING, --pading=PADDING
+                        extra margin tiles to seed around target area.
+                        Defaults to 0 (some edge tiles might be missing).
+                        A value of 1 ensures all tiles will be created, but
+                        some tiles may be wholly outside your bbox                        
+                        
 Arguments
 ---------
 
-    url
-       http://example.com/yourdir/tilecache.cgi? or
-       http://example.com/yourdir/tilecache.py
     layer 
        same layer name that is in the tilecache.cfg
     zoom start
        Zoom level to start the process
     zoom end
        Zoom level to end the process
-    bbox
-       The bounding box to seed
 
 Seeding by center point and radius
 ----------------------------------
@@ -391,17 +429,17 @@ The format of this file is:
 Examples
 --------
 
-An example with zoom levels 5 through 12 would be like;
+An example with zoom levels 5 through 12 and ~2 extra tiles around each zoom level would be like:
 
     ::
  
-      $ tilecache_seed.py "http://example.com/yourdir/tilecache.cgi?" Zip_Codes 5 12 "-118.12500,31.952162238,-116.015625,34.3071438563"
+      $ tilecache_seed.py Zip_Codes 5 12 "-118.12500,31.952162238,-116.015625,34.3071438563" 2
 
 The bbox can be dropped and defaults to world lonlat(-180,-90,180,90):
 
     ::
 
-      $ tilecache_seed.py "http://example.com/yourdir/tilecache.cgi?" Zip_Codes 0 9
+      $ tilecache_seed.py Zip_Codes 0 9
  
 
 In center point/radius mode, the zoom level range is not specifiable from the
@@ -409,14 +447,14 @@ command-line. An example usage might look like:
 
      ::
 
-       $ tilecache_seed.py "http://example.com/yourdir/tilecache.cgi?" Zip_Codes
+       $ tilecache_seed.py Zip_Codes
        -118.12500,31.952162238,0.05
        -121.46327,32.345345645,0.08
        <Ctrl+D>
 
 ... the seeding will then commence ...
 
-CLEANING YOUR TILECACHE
+Cleaning your TileCache
 =======================
 
 The tilecache_clean.py utility will remove the least recently accessed
@@ -456,7 +494,7 @@ filesystems use entire file blocks for files smaller than a block, running du
 -s or similar on your disk cache after a cleaning may still return a total
 cache size larger than you expect.
 
-TROUBLESHOOTING
+TroubleShooting
 ===============
 
 Occasionally, for some reason, when using meta tiles, your server may leave

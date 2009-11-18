@@ -4,11 +4,11 @@ from TileCache.Cache import Cache
 import sys, os, time, warnings
 
 class Disk (Cache):
-    def __init__ (self, base = None, umask = '002', **kwargs):
+    def __init__ (self, base = None, sendfile = False, umask = '002', **kwargs):
         Cache.__init__(self, **kwargs)
         self.basedir = base
         self.umask = int(umask, 0)
-        
+        self.sendfile = sendfile and sendfile.lower() in ["yes", "y", "t", "true"]
         if sys.platform.startswith("java"):
             from java.io import File
             self.file_module = File
@@ -19,8 +19,9 @@ class Disk (Cache):
         if not self.access(base, 'read'):
             self.makedirs(base)
         
-    def makedirs(self, path):
-        old_umask = os.umask(self.umask)
+    def makedirs(self, path, hide_dir_exists=True):
+        if hasattr(os, "umask"):
+            old_umask = os.umask(self.umask)
         try:
             os.makedirs(path)
         except OSError, E:
@@ -29,9 +30,10 @@ class Disk (Cache):
             # catch errors. This lets 'directory exists' errors pass through,
             # since they mean that as far as we're concerned, os.makedirs
             # has 'worked'
-            if E.errno != 17:
+            if E.errno != 17 or not hide_dir_exists:
                 raise E
-        os.umask(old_umask)
+        if hasattr(os, "umask"):
+            os.umask(old_umask)
         
     def access(self, path, type='read'):
         if self.platform == "jython":
@@ -62,8 +64,11 @@ class Disk (Cache):
     def get (self, tile):
         filename = self.getKey(tile)
         if self.access(filename, 'read'):
-            tile.data = file(filename, "rb").read()
-            return tile.data
+            if self.sendfile:
+                return filename
+            else:
+                tile.data = file(filename, "rb").read()
+                return tile.data
         else:
             return None
 
@@ -74,11 +79,13 @@ class Disk (Cache):
         if not self.access(dirname, 'write'):
             self.makedirs(dirname)
         tmpfile = filename + ".%d.tmp" % os.getpid()
-        old_umask = os.umask(self.umask)
+        if hasattr(os, "umask"):
+            old_umask = os.umask(self.umask)
         output = file(tmpfile, "wb")
         output.write(data)
         output.close()
-        os.umask( old_umask );
+        if hasattr(os, "umask"):
+            os.umask( old_umask );
         try:
             os.rename(tmpfile, filename)
         except OSError:
@@ -95,7 +102,7 @@ class Disk (Cache):
     def attemptLock (self, tile):
         name = self.getLockName(tile)
         try: 
-            self.makedirs(name)
+            self.makedirs(name, hide_dir_exists=False)
             return True
         except OSError:
             pass
@@ -104,7 +111,7 @@ class Disk (Cache):
             if st.st_ctime + self.stale < time.time():
                 warnings.warn("removing stale lock %s" % name)
                 # remove stale lock
-                self.unlock()
+                self.unlock(tile)
                 self.makedirs(name)
                 return True
         except OSError:
